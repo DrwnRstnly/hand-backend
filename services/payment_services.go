@@ -9,6 +9,15 @@ type PaymentService struct{}
 
 // CreatePayment handles the creation of a payment request using Snap
 func (service *PaymentService) CreatePayment(orderID string, grossAmount int64) (*snap.Response, error) {
+	return service.CreatePaymentWithCallback(orderID, grossAmount, "https://hand.tbn1.site/appointment-history")
+}
+
+// CreatePaymentWithCallback allows customizing the finish URL for the payment.
+func (service *PaymentService) CreatePaymentWithCallback(orderID string, grossAmount int64, finishURL string) (*snap.Response, error) {
+	if finishURL == "" {
+		finishURL = "https://hand.tbn1.site/appointment-history"
+	}
+
 	req := &snap.Request{
 		TransactionDetails: midtrans.TransactionDetails{
 			OrderID:  orderID,
@@ -19,7 +28,7 @@ func (service *PaymentService) CreatePayment(orderID string, grossAmount int64) 
 			Duration: 5,
 		},
 		Callbacks: &snap.Callbacks{
-			Finish: "https://hand.tbn1.site/appointment-history", 
+			Finish: finishURL,
 		},
 	}
 
