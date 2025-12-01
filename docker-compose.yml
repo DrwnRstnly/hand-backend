@@ -10,6 +10,12 @@ services:
       - hand-db-data:/var/lib/postgresql/data
     networks:
       - hand-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
 
   redis:
     image: redis:latest
@@ -18,6 +24,11 @@ services:
       - "6379:6379"
     networks:
       - hand-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   hand-api:
     build: .
@@ -25,8 +36,10 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - hand-db
-      - redis
+      hand-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     env_file:
       - .env
     networks:
