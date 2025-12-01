@@ -10,6 +10,7 @@ import (
 	"github.com/Hand-TBN1/hand-backend/models"
 	"github.com/Hand-TBN1/hand-backend/routes"
 	"github.com/Hand-TBN1/hand-backend/services"
+	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/robfig/cron/v3"
 )
@@ -63,6 +64,10 @@ func main() {
 
 	engine := config.NewGin()
 	engine.Use(middleware.CORS())
+
+	engine.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
 
 	routes.SetupAuthRoutes(engine, db)
 	routes.RegisterCheckInRoutes(engine, db)
