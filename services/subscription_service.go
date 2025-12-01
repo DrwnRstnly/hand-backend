@@ -149,6 +149,9 @@ func (s *SubscriptionService) CreatePremiumCheckout(userID string) (*CheckoutRes
 		return nil, fmt.Errorf("invalid user id")
 	}
 
+	// ----------------------------------------------------------------------
+	// 1. Check active subscription — prevent duplicate billing
+	// ----------------------------------------------------------------------
 	active, err := s.getActiveSubscription(userUUID)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
@@ -157,16 +160,19 @@ func (s *SubscriptionService) CreatePremiumCheckout(userID string) (*CheckoutRes
 		return nil, fmt.Errorf("premium plan already active until %s", active.ExpiresAt.Format(time.RFC3339))
 	}
 
-	pending, err := s.findLatestSubscriptionByStatus(userUUID, models.SubscriptionStatusPending)
-	if err == nil && pending != nil && pending.OrderID != "" && pending.PaymentToken != "" {
-		return &CheckoutResponse{
-			OrderID:        pending.OrderID,
-			SubscriptionID: pending.ID.String(),
-			Token:          pending.PaymentToken,
-			RedirectURL:    pending.PaymentRedirectURL,
-		}, nil
+	// ----------------------------------------------------------------------
+	// 2. Cleanup old pending checkout (expired / stuck)
+	// ----------------------------------------------------------------------
+	// Mark all pending subscriptions as canceled to force fresh checkout
+	if err := s.DB.Model(&models.Subscription{}).
+		Where("user_id = ? AND status = ?", userUUID, models.SubscriptionStatusPending).
+		Update("status", models.SubscriptionStatusCanceled).Error; err != nil {
+		return nil, err
 	}
 
+	// ----------------------------------------------------------------------
+	// 3. Create new pending subscription entry
+	// ----------------------------------------------------------------------
 	orderID := generateSubscriptionOrderID(userUUID)
 	subscription := models.Subscription{
 		UserID:  userUUID,
@@ -180,17 +186,30 @@ func (s *SubscriptionService) CreatePremiumCheckout(userID string) (*CheckoutRes
 		return nil, err
 	}
 
-	paymentResp, err := s.PaymentService.CreatePaymentWithCallback(orderID, premiumMonthlyPrice, "https://hand.tbn1.site/subscription")
+	// ----------------------------------------------------------------------
+	// 4. Request Midtrans Snap payment
+	// ----------------------------------------------------------------------
+	paymentResp, err := s.PaymentService.CreatePaymentWithCallback(
+		orderID,
+		premiumMonthlyPrice,
+		"https://hand.tbn1.site/subscription",
+	)
 	if err != nil {
+		// if Snap fails, cleanup subscription
+		s.DB.Delete(&subscription)
 		return nil, err
 	}
 
+	// Save payment info
 	subscription.PaymentToken = paymentResp.Token
 	subscription.PaymentRedirectURL = paymentResp.RedirectURL
 	if err := s.DB.Save(&subscription).Error; err != nil {
 		return nil, err
 	}
 
+	// ----------------------------------------------------------------------
+	// 5. Return checkout response to client
+	// ----------------------------------------------------------------------
 	return &CheckoutResponse{
 		OrderID:        orderID,
 		SubscriptionID: subscription.ID.String(),
@@ -198,6 +217,7 @@ func (s *SubscriptionService) CreatePremiumCheckout(userID string) (*CheckoutRes
 		RedirectURL:    subscription.PaymentRedirectURL,
 	}, nil
 }
+
 
 // HandlePaymentNotification updates subscription status based on Midtrans webhook.
 func (s *SubscriptionService) HandlePaymentNotification(orderID, transactionStatus string) error {
