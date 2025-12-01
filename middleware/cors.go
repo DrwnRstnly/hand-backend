@@ -7,8 +7,7 @@ import (
 func CORS() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		allowedOrigins := []string{
-			"http://localhost:3000",
-			"https://hand.tbn1.site",  
+			"*",
 		}
 
 		origin := ctx.Request.Header.Get("Origin")
