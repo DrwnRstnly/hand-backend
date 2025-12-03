@@ -69,6 +69,51 @@ func main() {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
+	engine.GET("/load-test", func(c *gin.Context) {
+		var users []models.User
+		
+		limit := c.DefaultQuery("limit", "100")
+		includeAssociations := c.DefaultQuery("associations", "true")
+		
+		query := db
+		
+		if includeAssociations == "true" {
+			query = query.
+				Preload("Therapist").
+				Preload("AppointmentUser").
+				Preload("Appointment").
+				Preload("PositiveAffirmations").
+				Preload("PersonalHealthPlans").
+				Preload("CheckIns").
+				Preload("ChatMessages").
+				Preload("EmergencyHistories")
+		}
+		
+		if limit != "all" {
+			var limitInt int
+			fmt.Sscanf(limit, "%d", &limitInt)
+			if limitInt > 0 {
+				query = query.Limit(limitInt)
+			}
+		}
+		
+		err := query.Find(&users).Error
+		
+		if err != nil {
+			c.JSON(500, gin.H{
+				"error": "Failed to fetch users",
+				"message": err.Error(),
+			})
+			return
+		}
+		
+		c.JSON(200, gin.H{
+			"status": "ok",
+			"count": len(users),
+			"users": users,
+		})
+	})
+
 	routes.SetupAuthRoutes(engine, db)
 	routes.RegisterCheckInRoutes(engine, db)
 	routes.RegisterMedicationRoutes(engine, db)
